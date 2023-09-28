@@ -1,0 +1,24 @@
+{
+  "name": "oracle-module",
+  "version": "1.0.0",
+  "scripts": {
+    "clean": "hardhat clean",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "coverage": "npx hardhat coverage",
+    "deploy:ethereum_testnet": "npx hardhat run --network ethereum_testnet scripts/deploy.ts",
+    "deploy:ethereum_mainnet": "npx hardhat run --network ethereum_mainnet scripts/deploy.ts",
+    "deploy:baseMainnet": "npx hardhat run --network base_mainnet scripts/deploy.ts",
+    "deploy:baseTestnet": "npx hardhat run --network base_testnet scripts/deploy.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Descent-Collective/oracle-module.git"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "dotenv": "^16.3.1",
+    "env-var": "^7.4.1",
+    "hardhat": "^2.17.4"
+  }
+}
