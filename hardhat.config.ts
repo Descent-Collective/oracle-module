@@ -1,10 +1,12 @@
 import { HardhatUserConfig } from 'hardhat/config';
+import '@openzeppelin/hardhat-upgrades';
+import '@nomiclabs/hardhat-ethers';
 import '@nomicfoundation/hardhat-toolbox';
 import env from './config/env';
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: '0.8.18',
+    version: '0.8.21',
     settings: {
       optimizer: {
         enabled: true,
