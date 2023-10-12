@@ -5,19 +5,17 @@ pragma solidity 0.8.21;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import "hardhat/console.sol";
-
 contract Median is Initializable, OwnableUpgradeable {
     uint256 public minimumQuorum;
     bytes32 public currencyPair;
-    uint256 internal lastTimestamp;
-    uint256 internal lastPrice;
+    uint128 internal lastTimestamp;
+    uint128 internal lastPrice;
 
     mapping(address => bool) public authorizedNodes;
     uint256 public authorizedNodesCount;
 
-    mapping(address => bool) public authorizedSigners;
-    uint256 public authorizedSignersCount;
+    mapping(address => bool) public authorizedRelayers;
+    uint256 public authorizedRelayersCount;
 
     struct PriceData {
         uint256 timestamp;
@@ -29,14 +27,14 @@ contract Median is Initializable, OwnableUpgradeable {
     // -- EVENTS --
     event AuthorizedNode(address indexed nodeAddress);
     event DeauthorizedNode(address indexed nodeAddress);
-    event AuthorizedSigner(address indexed signerAddress);
-    event DeauthorizedSigner(address indexed signerAddress);
+    event AuthorizedRelayer(address indexed relayerAddress);
+    event DeauthorizedRelayer(address indexed relayerAddress);
     event MinimumQuorumUpdated(uint256 indexed minimumQuorum);
     event PriceUpdated(uint256 indexed timestamp, uint256 indexed price);
 
     // -- ERRORS --
     error OnlyAuthorizedNodes();
-    error OnlyAuthorizedSigners();
+    error OnlyAuthorizedRelayers();
     error NotEnoughAuthorizedNodes();
     error InvalidArrayLength();
     error InvalidSignature();
@@ -52,23 +50,9 @@ contract Median is Initializable, OwnableUpgradeable {
         currencyPair = _currencyPair;
     }
 
-    modifier onlyAuthorizedNode() {
-        if (!authorizedNodes[msg.sender]) {
-            revert OnlyAuthorizedNodes();
-        }
-        _;
-    }
-
-    modifier onlyAuthorizedSigner() {
-        if (!authorizedSigners[msg.sender]) {
-            revert OnlyAuthorizedSigners();
-        }
-        _;
-    }
-
-    modifier hasMinimumQuorum() {
-        if (authorizedNodesCount < minimumQuorum) {
-            revert NotEnoughAuthorizedNodes();
+    modifier onlyAuthorizedRelayer() {
+        if (!authorizedRelayers[msg.sender]) {
+            revert OnlyAuthorizedRelayers();
         }
         _;
     }
@@ -91,22 +75,22 @@ contract Median is Initializable, OwnableUpgradeable {
         emit DeauthorizedNode(_nodeAddress);
     }
 
-    function authorizeSigner(address _signerAddress) external onlyOwner {
-        if (!authorizedSigners[_signerAddress]) {
-            authorizedSigners[_signerAddress] = true;
-            authorizedSignersCount++;
+    function authorizeRelayer(address _relayerAddress) external onlyOwner {
+        if (!authorizedRelayers[_relayerAddress]) {
+            authorizedRelayers[_relayerAddress] = true;
+            authorizedRelayersCount++;
         }
 
-        emit AuthorizedSigner(_signerAddress);
+        emit AuthorizedRelayer(_relayerAddress);
     }
 
-    function deauthorizeSigner(address _signerAddress) external onlyOwner {
-        if (authorizedSigners[_signerAddress]) {
-            authorizedSigners[_signerAddress] = false;
-            authorizedSignersCount--;
+    function deauthorizeRelayer(address _relayerAddress) external onlyOwner {
+        if (authorizedRelayers[_relayerAddress]) {
+            authorizedRelayers[_relayerAddress] = false;
+            authorizedRelayersCount--;
         }
 
-        emit DeauthorizedSigner(_signerAddress);
+        emit DeauthorizedRelayer(_relayerAddress);
     }
 
     function updateMinimumQuorum(uint256 _minimumQuorum) external onlyOwner {
@@ -125,7 +109,7 @@ contract Median is Initializable, OwnableUpgradeable {
         uint8[] calldata _v,
         bytes32[] calldata _r,
         bytes32[] calldata _s
-    ) external onlyAuthorizedSigner hasMinimumQuorum {
+    ) external onlyAuthorizedRelayer {
         if (
             _prices.length != _timestamps.length ||
             _prices.length != _v.length ||
@@ -133,6 +117,10 @@ contract Median is Initializable, OwnableUpgradeable {
             _prices.length != _s.length
         ) {
             revert InvalidArrayLength();
+        }
+
+        if (_prices.length < minimumQuorum) {
+            revert NotEnoughAuthorizedNodes();
         }
 
         for (uint256 i = 0; i < _prices.length; i++) {
@@ -157,11 +145,19 @@ contract Median is Initializable, OwnableUpgradeable {
         uint256[] memory sortedPrices = sort(_prices);
 
         lastPrice = uint128(median(sortedPrices));
-        lastTimestamp = _timestamps[_timestamps.length - 1];
+        lastTimestamp = uint128(_timestamps[_timestamps.length - 1]);
 
         priceHistory.push(PriceData(lastTimestamp, lastPrice));
 
         emit PriceUpdated(lastTimestamp, lastPrice);
+    }
+
+    function getMessageHash(
+        uint256 _price,
+        uint32 _timeStamp,
+        bytes32 _pair
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(_price, _timeStamp, _pair));
     }
 
     function recover(
@@ -172,10 +168,13 @@ contract Median is Initializable, OwnableUpgradeable {
         bytes32 _r,
         bytes32 _s
     ) internal pure returns (address) {
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(_price, _timeStamp, _pair)
+        bytes32 messageHash = getMessageHash(_price, _timeStamp, _pair);
+
+        bytes32 prefixedHash = keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
         );
-        return ecrecover(messageHash, _v, _r, _s);
+
+        return ecrecover(prefixedHash, _v, _r, _s);
     }
 
     // Function to calculate the median of an array of values

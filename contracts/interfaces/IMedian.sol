@@ -8,11 +8,11 @@ interface IMedian {
     // Emitted when a node is deauthorized
     event DeauthorizedNode(address indexed nodeAddress);
 
-    // Emitted when a new signer is authorized
-    event AuthorizedSigner(address indexed signerAddress);
+    // Emitted when a new relayer is authorized
+    event AuthorizedRelayer(address indexed relayerAddress);
 
-    // Emitted when a signer is deauthorized
-    event DeauthorizedSigner(address indexed signerAddress);
+    // Emitted when a relayer is deauthorized
+    event DeauthorizedRelayer(address indexed relayerAddress);
 
     // Emitted when the price is updated
     event PriceUpdated(uint256 indexed timestamp, uint256 indexed price);
@@ -26,11 +26,11 @@ interface IMedian {
     // Deauthorizes a node to submit prices to clients
     function deauthorizeNode(address nodeAddress) external;
 
-    // Authorizes a signer to submit prices
-    function authorizeSigner(address signerAddress) external;
+    // Authorizes a relayer to submit prices
+    function authorizeRelayer(address signerAddress) external;
 
-    // Deauthorizes a signer to submit prices
-    function deauthorizeSigner(address signerAddress) external;
+    // Deauthorizes a relayer to submit prices
+    function deauthorizeRelayer(address signerAddress) external;
 
     // Updates the minimum quorum
     function updateMinimumQuorum(uint256 minimumQuorum) external;
