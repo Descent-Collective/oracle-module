@@ -18,8 +18,8 @@ contract Median is Initializable, OwnableUpgradeable {
     uint256 public authorizedRelayersCount;
 
     struct PriceData {
-        uint256 timestamp;
-        uint256 price;
+        uint128 timestamp;
+        uint128 price;
     }
 
     PriceData[] public priceHistory;
@@ -30,7 +30,7 @@ contract Median is Initializable, OwnableUpgradeable {
     event AuthorizedRelayer(address indexed relayerAddress);
     event DeauthorizedRelayer(address indexed relayerAddress);
     event MinimumQuorumUpdated(uint256 indexed minimumQuorum);
-    event PriceUpdated(uint256 indexed timestamp, uint256 indexed price);
+    event PriceUpdated(uint128 indexed timestamp, uint128 indexed price);
 
     // -- ERRORS --
     error OnlyAuthorizedNodes();
