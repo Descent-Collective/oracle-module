@@ -37,13 +37,11 @@ interface IMedian {
 
     // Updates the price
     function updatePrice(
-        uint256[] calldata _prices,
-        uint32[] calldata _timestamps,
-        uint8[] calldata _v,
-        bytes32[] calldata _r,
-        bytes32[] calldata _s
+        uint256[] memory _prices,
+        uint32[] memory _timestamps,
+        bytes[] memory _signatures
     ) external;
 
     // Reads the price and the timestamp
-    function read() external view returns (uint256, uint256);
+    function read() external view returns (uint128, uint128);
 }

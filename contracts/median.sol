@@ -99,22 +99,18 @@ contract Median is Initializable, OwnableUpgradeable {
         emit MinimumQuorumUpdated(_minimumQuorum);
     }
 
-    function read() external view returns (uint256, uint256) {
+    function read() external view returns (uint128, uint128) {
         return (lastTimestamp, lastPrice);
     }
 
     function update(
-        uint256[] calldata _prices,
-        uint32[] calldata _timestamps,
-        uint8[] calldata _v,
-        bytes32[] calldata _r,
-        bytes32[] calldata _s
+        uint256[] memory _prices,
+        uint32[] memory _timestamps,
+        bytes[] memory _signatures
     ) external onlyAuthorizedRelayer {
         if (
             _prices.length != _timestamps.length ||
-            _prices.length != _v.length ||
-            _prices.length != _r.length ||
-            _prices.length != _s.length
+            _prices.length != _signatures.length
         ) {
             revert InvalidArrayLength();
         }
@@ -132,9 +128,7 @@ contract Median is Initializable, OwnableUpgradeable {
                 _prices[i],
                 _timestamps[i],
                 currencyPair,
-                _v[i],
-                _r[i],
-                _s[i]
+                _signatures[i]
             );
 
             if (signer == address(0) || !authorizedNodes[signer]) {
@@ -164,9 +158,7 @@ contract Median is Initializable, OwnableUpgradeable {
         uint256 _price,
         uint32 _timeStamp,
         bytes32 _pair,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s
+        bytes memory sig
     ) internal pure returns (address) {
         bytes32 messageHash = getMessageHash(_price, _timeStamp, _pair);
 
@@ -174,7 +166,23 @@ contract Median is Initializable, OwnableUpgradeable {
             abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
         );
 
-        return ecrecover(prefixedHash, _v, _r, _s);
+        (bytes32 r, bytes32 s, uint8 v) = splitSignature(sig);
+
+        return ecrecover(prefixedHash, v, r, s);
+    }
+
+    function splitSignature(
+        bytes memory sig
+    ) internal pure returns (bytes32 r, bytes32 s, uint8 v) {
+        if (sig.length != 65) {
+            revert InvalidSignature();
+        }
+
+        assembly {
+            r := mload(add(sig, 32))
+            s := mload(add(sig, 64))
+            v := byte(0, mload(add(sig, 96)))
+        }
     }
 
     // Function to calculate the median of an array of values
