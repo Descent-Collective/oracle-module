@@ -1,19 +1,40 @@
-## Foundry
+## Oracle Module
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+- Get [Foundry](https://book.getfoundry.sh/)
 
-Foundry consists of:
+## To test
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+```shell
+$ forge test -vvv --gas-report
+```
 
-## Documentation
+## To deploy locally to anvil
 
-https://book.getfoundry.sh/
+Run
 
-## Usage
+```shell
+$ anvil
+```
+
+Note: Be sure to set `PRIVATE_KEY` variable in .env to be one of the anvil local private keys with eth balance
+
+Then
+
+```shell
+$ source .env
+$ forge script script/median.s.sol:MedianScript --fork-url http://localhost:8545 --broadcast -vvvv
+```
+
+## To deploy to a public network
+
+```shell
+$ source .env
+$ forge script script/median.s.sol:MedianScript --rpc-url $GOERLI_RPC_URL --broadcast --verify -vvvv
+```
+
+Note: Can remove `--broadcast and `--verify` to simulate the deployment script locally without actually broadcasting it to the network
+
+## Foundry Usage
 
 ### Build
 
@@ -24,7 +45,7 @@ $ forge build
 ### Test
 
 ```shell
-$ forge test
+$ forge test -vvv --gas-report
 ```
 
 ### Format
@@ -43,12 +64,6 @@ $ forge snapshot
 
 ```shell
 $ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
 ```
 
 ### Cast

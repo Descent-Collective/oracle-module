@@ -4,15 +4,15 @@ pragma solidity 0.8.21;
 import {Test} from "forge-std/Test.sol";
 import {ECDSA} from "@openzeppelin-contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin-contracts/utils/cryptography/MessageHashUtils.sol";
-import {Median} from "../src/Median.sol";
-import {Proxy} from "../src/Proxy.sol";
+import {Median} from "../src/median.sol";
+import {Proxy} from "../src/proxy.sol";
 
 contract MedianTest is Test {
     using MessageHashUtils for bytes;
     using ECDSA for bytes32;
 
-    Median public median;
-    Proxy public proxy;
+    Median median;
+    Proxy proxy;
 
     uint256 relayer1PrivKey = uint256(keccak256("relayer 1"));
     uint256 relayer2PrivKey = uint256(keccak256("relayer 2"));
@@ -137,6 +137,7 @@ contract MedianTest is Test {
             bytes32[] memory _s
         ) = updateParameters(preparedProxy, relayer1PrivKey);
 
+        // increase quorum
         vm.prank(owner);
         preparedProxy.updateMinimumQuorum(2);
 
