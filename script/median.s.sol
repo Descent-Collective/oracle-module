@@ -24,6 +24,9 @@ contract MedianScript is Script {
         logMessage = string.concat("Proxy address: ", vm.toString(address(proxy)));
         console2.logString(logMessage);
 
+        // for testing with local relayer client
+        // Median(address(proxy)).authorizeRelayer(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266);
+
         vm.stopBroadcast();
     }
 }

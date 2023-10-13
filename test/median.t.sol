@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.21;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console2} from "forge-std/Test.sol";
 import {ECDSA} from "@openzeppelin-contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin-contracts/utils/cryptography/MessageHashUtils.sol";
 import {Median} from "../src/median.sol";
@@ -29,6 +29,8 @@ contract MedianTest is Test {
     error InvalidTimestamp();
     error OwnableUnauthorizedAccount(address account);
     error ECDSAInvalidSignature();
+    error PricesNotOrdered();
+    error InvalidQuorum();
 
     function preSetup() private {
         vm.warp(vm.unixTime() / 100);
@@ -66,41 +68,33 @@ contract MedianTest is Test {
     function updateParameters(Median preparedProxy, uint256 privKey)
         private
         view
-        returns (
-            uint256[] memory _prices,
-            uint64[] memory _timestamps,
-            uint8[] memory _v,
-            bytes32[] memory _r,
-            bytes32[] memory _s
-        )
+        returns (uint256[] memory _prices, uint64[] memory _timestamps, bytes[] memory _signatures)
     {
         _prices = new uint256[](1);
         _timestamps = new uint64[](1);
-        _v = new uint8[](1);
-        _r = new bytes32[](1);
-        _s = new bytes32[](1);
+        _signatures = new bytes[](1);
+        uint8[] memory _v = new uint8[](1);
+        bytes32[] memory _r = new bytes32[](1);
+        bytes32[] memory _s = new bytes32[](1);
 
         _prices[0] = 1e6;
         _timestamps[0] = uint64(block.timestamp);
 
         bytes32 messageDigest =
-            abi.encodePacked(_prices[0], _timestamps[0], preparedProxy.currencyPair()).toEthSignedMessageHash();
+            abi.encode(_prices[0], _timestamps[0], preparedProxy.currencyPair()).toEthSignedMessageHash();
         (_v[0], _r[0], _s[0]) = vm.sign(privKey, messageDigest);
+
+        _signatures[0] = abi.encodePacked(_r[0], _s[0], _v[0]);
     }
 
     function test_update_basic() external {
         Median preparedProxy = castIntoMedianType(proxy);
 
-        (
-            uint256[] memory _prices,
-            uint64[] memory _timestamps,
-            uint8[] memory _v,
-            bytes32[] memory _r,
-            bytes32[] memory _s
-        ) = updateParameters(preparedProxy, relayer1PrivKey);
+        (uint256[] memory _prices, uint64[] memory _timestamps, bytes[] memory _signatures) =
+            updateParameters(preparedProxy, relayer1PrivKey);
 
         vm.startPrank(relayer1);
-        preparedProxy.update(_prices, _timestamps, _v, _r, _s);
+        preparedProxy.update(_prices, _timestamps, _signatures);
 
         (uint256 lastTimestamp, uint256 lastPrice) = preparedProxy.read();
         assertEq(lastTimestamp, block.timestamp);
@@ -114,28 +108,18 @@ contract MedianTest is Test {
     function test_update_reverts_if_not_authorized_signer() external {
         Median preparedProxy = castIntoMedianType(proxy);
 
-        (
-            uint256[] memory _prices,
-            uint64[] memory _timestamps,
-            uint8[] memory _v,
-            bytes32[] memory _r,
-            bytes32[] memory _s
-        ) = updateParameters(preparedProxy, relayer1PrivKey);
+        (uint256[] memory _prices, uint64[] memory _timestamps, bytes[] memory _signatures) =
+            updateParameters(preparedProxy, relayer1PrivKey);
 
         vm.expectRevert(OnlyAuthorizedRelayers.selector);
-        preparedProxy.update(_prices, _timestamps, _v, _r, _s);
+        preparedProxy.update(_prices, _timestamps, _signatures);
     }
 
     function test_update_reverts_if_not_minimum_price_source_quorum() external {
         Median preparedProxy = castIntoMedianType(proxy);
 
-        (
-            uint256[] memory _prices,
-            uint64[] memory _timestamps,
-            uint8[] memory _v,
-            bytes32[] memory _r,
-            bytes32[] memory _s
-        ) = updateParameters(preparedProxy, relayer1PrivKey);
+        (uint256[] memory _prices, uint64[] memory _timestamps, bytes[] memory _signatures) =
+            updateParameters(preparedProxy, relayer1PrivKey);
 
         // increase quorum
         vm.prank(owner);
@@ -143,30 +127,61 @@ contract MedianTest is Test {
 
         vm.startPrank(relayer1);
         vm.expectRevert(NotEnoughPrices.selector);
-        preparedProxy.update(_prices, _timestamps, _v, _r, _s);
+        preparedProxy.update(_prices, _timestamps, _signatures);
     }
 
     function test_update_reverts_if_invalid_signature_or_wrong_signer() external {
         Median preparedProxy = castIntoMedianType(proxy);
 
-        (
-            uint256[] memory _prices,
-            uint64[] memory _timestamps,
-            uint8[] memory _v,
-            bytes32[] memory _r,
-            bytes32[] memory _s
-        ) = updateParameters(preparedProxy, ownerPrivKey);
+        (uint256[] memory _prices, uint64[] memory _timestamps, bytes[] memory _signatures) =
+            updateParameters(preparedProxy, ownerPrivKey);
 
         vm.startPrank(relayer1);
 
         // test with sigs that recover to a diff address that's not relayer1
         vm.expectRevert(InvalidSignature.selector);
-        preparedProxy.update(_prices, _timestamps, _v, _r, _s);
+        preparedProxy.update(_prices, _timestamps, _signatures);
 
         // test with sigs that recover to address(0)
-        _v[0] = 17; // any non zero value will do apart from 27 and 28
+        assembly {
+            let lenOffsetOfSignatureAtIndex0 := mload(add(_signatures, 0x20))
+            // write 17 to the _v value of the sig at index 0
+            // 0x61 derived from := 0x20 (len space) + 0x40 (r and v space)
+            mstore8(add(lenOffsetOfSignatureAtIndex0, 0x60), 17) // any non zero value will do apart from 27 and 28
+        }
         vm.expectRevert(ECDSAInvalidSignature.selector);
-        preparedProxy.update(_prices, _timestamps, _v, _r, _s);
+        preparedProxy.update(_prices, _timestamps, _signatures);
+    }
+
+    function test_update_reverts_if_prices_not_ordered() external {
+        Median preparedProxy = castIntoMedianType(proxy);
+
+        uint256[] memory _prices = new uint256[](2);
+        uint64[] memory _timestamps = new uint64[](2);
+        bytes[] memory _signatures = new bytes[](2);
+
+        _prices[0] = 1e6;
+        _timestamps[0] = uint64(block.timestamp);
+
+        bytes32 messageDigest =
+            abi.encode(_prices[0], _timestamps[0], preparedProxy.currencyPair()).toEthSignedMessageHash();
+        (uint8 _v, bytes32 _r, bytes32 _s) = vm.sign(relayer1PrivKey, messageDigest);
+
+        _signatures[0] = abi.encodePacked(_r, _s, _v);
+
+        _prices[1] = 0.99999e6;
+        _timestamps[1] = uint64(block.timestamp);
+
+        messageDigest = abi.encode(_prices[1], _timestamps[1], preparedProxy.currencyPair()).toEthSignedMessageHash();
+        (_v, _r, _s) = vm.sign(relayer1PrivKey, messageDigest);
+
+        _signatures[1] = abi.encodePacked(_r, _s, _v);
+
+        vm.startPrank(relayer1);
+
+        // test with sigs that recover to a diff address that's not relayer1
+        vm.expectRevert(PricesNotOrdered.selector);
+        preparedProxy.update(_prices, _timestamps, _signatures);
     }
 
     function test_authorize_relayer() external {
@@ -221,5 +236,15 @@ contract MedianTest is Test {
 
         // assertions
         assertEq(preparedProxy.minimumQuorum(), 2);
+    }
+
+    function test_update_minimum_quorum_reverts_if_set_to_0() external {
+        Median preparedProxy = castIntoMedianType(proxy);
+        assertEq(preparedProxy.minimumQuorum(), 1);
+
+        // call by owner should not revert
+        vm.prank(owner);
+        vm.expectRevert(InvalidQuorum.selector);
+        preparedProxy.updateMinimumQuorum(0);
     }
 }

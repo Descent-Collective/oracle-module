@@ -2,6 +2,7 @@
 pragma solidity 0.8.21;
 
 interface IMedian {
+    // -- CUSTOM TYPES --
     struct PriceData {
         uint128 timestamp;
         uint128 price;
@@ -13,7 +14,10 @@ interface IMedian {
     error InvalidArrayLength();
     error InvalidSignature();
     error InvalidTimestamp();
+    error PricesNotOrdered();
+    error InvalidQuorum();
 
+    // -- EVENTS --
     // Emitted when a new signer is authorized
     event AuthorizedRelayer(address indexed signerAddress);
 
@@ -26,6 +30,7 @@ interface IMedian {
     // Emitted when the minimum quorum is updated
     event MinimumQuorumUpdated(uint256 indexed minimumQuorum);
 
+    // -- INTERFACE FUNCTIONS --
     // Authorizes a signer to submit prices
     function authorizeRelayer(address signerAddress) external;
 
@@ -36,13 +41,7 @@ interface IMedian {
     function updateMinimumQuorum(uint32 minimumQuorum) external;
 
     // Updates the price
-    function update(
-        uint256[] calldata _prices,
-        uint64[] calldata _timestamps,
-        uint8[] calldata _v,
-        bytes32[] calldata _r,
-        bytes32[] calldata _s
-    ) external;
+    function update(uint256[] calldata _prices, uint64[] calldata _timestamps, bytes[] calldata _signatures) external;
 
     // Reads the price and the timestamp
     function read() external view returns (uint256, uint256);

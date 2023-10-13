@@ -15,6 +15,7 @@ contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
     using ECDSA for bytes32;
 
     bytes32 public constant currencyPair = 0x555344432f784e474e0000000000000000000000000000000000000000000000; // hex("USDC/xNGN);
+
     uint32 public minimumQuorum;
     uint64 internal lastTimestamp;
     uint128 internal lastPrice;
@@ -33,16 +34,13 @@ contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     modifier onlyAuthorizedRelayer() {
-        if (!authorizedRelayers[msg.sender]) {
-            revert OnlyAuthorizedRelayers();
-        }
+        if (!authorizedRelayers[msg.sender]) revert OnlyAuthorizedRelayers();
+
         _;
     }
 
     modifier hasMinimumQuorum(uint256 pricesLength) {
-        if (pricesLength < minimumQuorum) {
-            revert NotEnoughPrices();
-        }
+        if (pricesLength < minimumQuorum) revert NotEnoughPrices();
         _;
     }
 
@@ -65,6 +63,7 @@ contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function updateMinimumQuorum(uint32 _minimumQuorum) external onlyOwner {
+        if (_minimumQuorum == 0) revert InvalidQuorum();
         minimumQuorum = _minimumQuorum;
 
         emit MinimumQuorumUpdated(_minimumQuorum);
@@ -74,60 +73,50 @@ contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return (lastTimestamp, lastPrice);
     }
 
-    function update(
-        uint256[] calldata _prices,
-        uint64[] calldata _timestamps,
-        uint8[] calldata _v,
-        bytes32[] calldata _r,
-        bytes32[] calldata _s
-    ) external onlyAuthorizedRelayer hasMinimumQuorum(_prices.length) {
-        if (
-            _prices.length != _timestamps.length || _prices.length != _v.length || _prices.length != _r.length
-                || _prices.length != _s.length
-        ) {
-            revert InvalidArrayLength();
-        }
+    function update(uint256[] calldata _prices, uint64[] calldata _timestamps, bytes[] calldata _signatures)
+        external
+        onlyAuthorizedRelayer
+        hasMinimumQuorum(_prices.length)
+    {
+        if (_prices.length != _timestamps.length || _prices.length != _signatures.length) revert InvalidArrayLength();
 
         // cache timestamp on the stack to save gas
         uint256 _lastTimestamp = lastTimestamp;
+        uint256 _trackedPrice;
 
         for (uint256 i; i < _prices.length; ++i) {
-            if (_timestamps[i] <= _lastTimestamp) {
-                revert InvalidTimestamp();
-            }
+            if (_timestamps[i] <= _lastTimestamp) revert InvalidTimestamp();
+            if (_prices[i] < _trackedPrice) revert PricesNotOrdered();
 
-            address signer = recover(_prices[i], _timestamps[i], currencyPair, _v[i], _r[i], _s[i]);
+            address signer = recover(_prices[i], _timestamps[i], currencyPair, _signatures[i]);
 
             // ecdsa lib already reverts with error `ECDSAInvalidSignature()` if signer == address(0)
-            if (signer != msg.sender) {
-                revert InvalidSignature();
-            }
+            if (signer != msg.sender) revert InvalidSignature();
+
+            _trackedPrice = _prices[i];
         }
 
-        uint256[] memory sortedPrices = sort(_prices);
-
-        lastPrice = uint128(median(sortedPrices));
-        lastTimestamp = _timestamps[_timestamps.length - 1];
+        // already confirmed to be sorted in the loop above.
+        lastPrice = uint128(median(_prices));
+        lastTimestamp = uint64(block.timestamp);
 
         priceHistory.push(PriceData({timestamp: lastTimestamp, price: lastPrice}));
 
         emit PriceUpdated(lastTimestamp, lastPrice);
     }
 
-    function recover(uint256 _price, uint64 _timestamp, bytes32 _pair, uint8 _v, bytes32 _r, bytes32 _s)
+    function recover(uint256 _price, uint64 _timestamp, bytes32 _pair, bytes calldata _signature)
         internal
         pure
         returns (address)
     {
-        bytes32 messageHash = abi.encodePacked(_price, _timestamp, _pair).toEthSignedMessageHash();
-        return messageHash.recover(_v, _r, _s);
+        bytes32 messageHash = abi.encode(_price, _timestamp, _pair).toEthSignedMessageHash();
+        return messageHash.recover(_signature);
     }
 
     // Function to calculate the median of an array of values
     function median(uint256[] memory values) internal pure returns (uint256) {
-        if (values.length == 0) {
-            revert InvalidArrayLength();
-        }
+        if (values.length == 0) revert InvalidArrayLength();
 
         if (values.length % 2 == 0) {
             uint256 middle1 = values[(values.length / 2) - 1];
@@ -136,20 +125,5 @@ contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
         } else {
             return values[values.length / 2];
         }
-    }
-
-    // Function to sort an array of values
-    function sort(uint256[] memory data) internal pure returns (uint256[] memory) {
-        uint256 n = data.length;
-        for (uint256 i = 0; i < n - 1; i++) {
-            for (uint256 j = i + 1; j < n; j++) {
-                if (data[i] > data[j]) {
-                    uint256 temp = data[i];
-                    data[i] = data[j];
-                    data[j] = temp;
-                }
-            }
-        }
-        return data;
     }
 }
