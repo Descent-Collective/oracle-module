@@ -16,8 +16,6 @@ contract Median is IMedian, Ownable {
     mapping(address => bool) public authorizedNodes;
     mapping(uint8 => address) public slot;
 
-    PriceData[] public priceHistory;
-
     constructor(uint256 _minimumQuorum, address currency, address collateral) Ownable(msg.sender) {
         currencyPair = keccak256(abi.encode(currency, collateral));
         minimumQuorum = _minimumQuorum;
@@ -104,7 +102,6 @@ contract Median is IMedian, Ownable {
         // Update storage
         lastPrice = _lastPrice;
         lastTimestamp = _currentTimestamp;
-        priceHistory.push(PriceData({timestamp: _currentTimestamp, price: _lastPrice}));
 
         // emit event
         emit PriceUpdated(lastTimestamp, lastPrice);
@@ -116,22 +113,13 @@ contract Median is IMedian, Ownable {
         returns (address recoveredAddress)
     {
         bytes32 messageHash = keccak256(abi.encodePacked(_price, _timestamp, currencyPair));
+        bytes32 digest = keccak256(bytes.concat("\x19Ethereum Signed Message:\n32", messageHash));
 
-        bytes32 digest;
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
+        uint8 v = uint8(_signature[64]);
+        bytes32 r = bytes32(_signature[0:32]);
+        bytes32 s = bytes32(_signature[32:64]);
 
-        assembly ("memory-safe") {
-            r := calldataload(_signature.offset)
-            s := calldataload(add(_signature.offset, 0x20))
-            v := shr(248, calldataload(add(_signature.offset, 0x40)))
-
-            mstore(0x00, "\x19Ethereum Signed Message:\n32") // 32 is the bytes-length of messageHash
-            mstore(0x1c, messageHash) // 0x1c (28) is the length of the prefix
-            digest := keccak256(0x00, 0x3c) // 0x3c is the length of the prefix (0x1c) + messageHash (0x20)
-        }
-
+        // no need to check the order of s or replay as none will work because of the timestamp check in the calling function
         recoveredAddress = ecrecover(digest, v, r, s);
         if (recoveredAddress == address(0)) revert InvalidSignature();
     }
