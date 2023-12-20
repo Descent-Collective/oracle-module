@@ -87,10 +87,6 @@ contract MedianTest is Test {
         (uint256 lastTimestamp, uint256 lastPrice) = median.read();
         assertEq(lastTimestamp, block.timestamp);
         assertEq(lastPrice, 1e6);
-
-        (uint256 timestamp, uint256 price) = median.priceHistory(0);
-        assertEq(timestamp, block.timestamp);
-        assertEq(price, 1e6);
     }
 
     function test_update_reverts_if_not_minimum_price_source_quorum() external {

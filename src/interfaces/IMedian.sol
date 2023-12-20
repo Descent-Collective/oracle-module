@@ -52,9 +52,6 @@ interface IMedian {
     // Reads the price and the timestamp
     function read() external view returns (uint256, uint256);
 
-    // Reads historical price data
-    function priceHistory(uint256 index) external view returns (uint256, uint256);
-
     // Reads the currency pair bytes32 value
     function currencyPair() external view returns (bytes32);
 
