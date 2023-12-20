@@ -3,20 +3,14 @@ pragma solidity 0.8.21;
 
 //  ==========  External imports    ==========
 import {Ownable} from "@openzeppelin-contracts/access/Ownable.sol";
-import {ECDSA} from "@openzeppelin-contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin-contracts/utils/cryptography/MessageHashUtils.sol";
-
 import {IMedian} from "./interfaces/IMedian.sol";
 
 contract Median is IMedian, Ownable {
-    using MessageHashUtils for bytes;
-    using ECDSA for bytes32;
-
     bytes32 public immutable currencyPair;
 
     uint256 public minimumQuorum;
-    uint256 internal lastTimestamp;
-    uint256 internal lastPrice;
+    uint256 private lastTimestamp;
+    uint256 private lastPrice;
 
     uint256 public authorizedNodesCount;
     mapping(address => bool) public authorizedNodes;
@@ -36,21 +30,28 @@ contract Median is IMedian, Ownable {
 
     function authorizeNode(address _nodeAddress) external onlyOwner {
         if (_nodeAddress == address(0)) revert AddressZero();
+        if (authorizedNodes[_nodeAddress]) revert AlreadyAuthorized();
         uint8 mostSignificantByte = uint8(_addressToUint256(_nodeAddress) >> 152);
         if (slot[mostSignificantByte] != address(0)) revert NodeSlotTaken();
 
         authorizedNodes[_nodeAddress] = true;
         slot[mostSignificantByte] = _nodeAddress;
-        ++authorizedNodesCount;
+        unchecked {
+            ++authorizedNodesCount;
+        }
 
         emit AuthorizedNode(_nodeAddress);
     }
 
     function deauthorizeNode(address _nodeAddress) external onlyOwner {
+        if (!authorizedNodes[_nodeAddress]) revert AlreadyDeauthorized();
+
         authorizedNodes[_nodeAddress] = false;
         uint8 mostSignificantByte = uint8(_addressToUint256(_nodeAddress) >> 152);
-        delete slot[mostSignificantByte];
-        --authorizedNodesCount;
+        slot[mostSignificantByte] = address(0);
+        unchecked {
+            --authorizedNodesCount;
+        }
 
         emit DeauthorizedNode(_nodeAddress);
     }
@@ -70,7 +71,9 @@ contract Median is IMedian, Ownable {
         external
         hasMinimumQuorum(_prices.length)
     {
-        if (_prices.length != _timestamps.length || _prices.length != _signatures.length) revert InvalidArrayLength();
+        if (_prices.length != _timestamps.length || _prices.length != _signatures.length) {
+            revert InvalidArrayLength();
+        }
 
         // cache timestamp on the stack to save gas
         uint256 _lastTimestamp = lastTimestamp;
@@ -135,8 +138,6 @@ contract Median is IMedian, Ownable {
 
     // Function to calculate the median of an array of values
     function _median(uint256[] memory values) internal pure returns (uint256) {
-        if (values.length == 0) revert InvalidArrayLength();
-
         if (values.length % 2 == 0) {
             uint256 m = values.length >> 1;
             uint256 middle1 = values[m - 1];

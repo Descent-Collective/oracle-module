@@ -2,13 +2,11 @@
 pragma solidity 0.8.21;
 
 import {Test} from "forge-std/Test.sol";
-import {ECDSA} from "@openzeppelin-contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin-contracts/utils/cryptography/MessageHashUtils.sol";
 import {Median} from "../src/median.sol";
 
 contract MedianTest is Test {
     using MessageHashUtils for bytes32;
-    using ECDSA for bytes32;
 
     Median median;
 
@@ -29,6 +27,10 @@ contract MedianTest is Test {
     error AlreadySigned();
     error PricesNotOrdered();
     error InvalidQuorum();
+    error AddressZero();
+    error AlreadyAuthorized();
+    error AlreadyDeauthorized();
+    error NodeSlotTaken();
 
     function preSetup() private {
         vm.warp(vm.unixTime() / 100);
@@ -76,7 +78,7 @@ contract MedianTest is Test {
         _signatures[0] = abi.encodePacked(_r[0], _s[0], _v[0]);
     }
 
-    function test_update_basic() external {
+    function test_update() external {
         (uint256[] memory _prices, uint256[] memory _timestamps, bytes[] memory _signatures) =
             updateParameters(median, node1PrivKey);
 
@@ -101,6 +103,53 @@ contract MedianTest is Test {
 
         vm.expectRevert(NotEnoughPrices.selector);
         median.update(_prices, _timestamps, _signatures);
+    }
+
+    function test_update_reverts_if_timestamp_not_higher() external {
+        (uint256[] memory _prices, uint256[] memory _timestamps, bytes[] memory _signatures) =
+            updateParameters(median, node1PrivKey);
+
+        median.update(_prices, _timestamps, _signatures);
+
+        skip(10);
+
+        // should revert if same time is sent
+        vm.expectRevert(InvalidTimestamp.selector);
+        median.update(_prices, _timestamps, _signatures);
+
+        // should revert if earlier time is sent
+        _timestamps[0] -= 1;
+        vm.expectRevert(InvalidTimestamp.selector);
+        median.update(_prices, _timestamps, _signatures);
+    }
+
+    function test_update_reverts_if_invalid_array_length() external {
+        uint256[] memory _prices0 = new uint256[](0);
+        uint256[] memory _timestamps0 = new uint256[](0);
+        bytes[] memory _signatures0 = new bytes[](0);
+
+        uint256[] memory _prices1 = new uint256[](1);
+        uint256[] memory _timestamps1 = new uint256[](1);
+        bytes[] memory _signatures1 = new bytes[](1);
+
+        uint256[] memory _timestamps2 = new uint256[](2);
+        bytes[] memory _signatures2 = new bytes[](2);
+
+        // reverts if any is zero even if all lengths matches (i.e are 0)
+        vm.expectRevert(NotEnoughPrices.selector);
+        median.update(_prices0, _timestamps0, _signatures0);
+
+        // reverts if length of _prices is the odd one out
+        vm.expectRevert(InvalidArrayLength.selector);
+        median.update(_prices1, _timestamps2, _signatures2);
+
+        // reverts if length of _timestamp is the odd one out
+        vm.expectRevert(InvalidArrayLength.selector);
+        median.update(_prices1, _timestamps2, _signatures1);
+
+        // reverts if length of _signatures is the odd one out
+        vm.expectRevert(InvalidArrayLength.selector);
+        median.update(_prices1, _timestamps1, _signatures2);
     }
 
     function test_update_reverts_if_invalid_signature_or_wrong_signer() external {
@@ -149,6 +198,33 @@ contract MedianTest is Test {
         median.update(_prices, _timestamps, _signatures);
     }
 
+    function test_update_reverts_if_non_unique_signers() external {
+        uint256[] memory _prices = new uint256[](2);
+        uint256[] memory _timestamps = new uint256[](2);
+        bytes[] memory _signatures = new bytes[](2);
+
+        _prices[0] = 0.99999e6;
+        _timestamps[0] = block.timestamp;
+
+        bytes32 messageDigest =
+            keccak256(abi.encode(_prices[0], _timestamps[0], median.currencyPair())).toEthSignedMessageHash();
+        (uint8 _v, bytes32 _r, bytes32 _s) = vm.sign(node1PrivKey, messageDigest);
+
+        _signatures[0] = abi.encodePacked(_r, _s, _v);
+
+        _prices[1] = 1e6;
+        _timestamps[1] = block.timestamp;
+
+        messageDigest =
+            keccak256(abi.encode(_prices[1], _timestamps[1], median.currencyPair())).toEthSignedMessageHash();
+        (_v, _r, _s) = vm.sign(node1PrivKey, messageDigest);
+
+        _signatures[1] = abi.encodePacked(_r, _s, _v);
+
+        vm.expectRevert(AlreadySigned.selector);
+        median.update(_prices, _timestamps, _signatures);
+    }
+
     function test_authorize_node() external {
         assertEq(median.authorizedNodesCount(), 2);
 
@@ -156,8 +232,21 @@ contract MedianTest is Test {
         vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, (address(this))));
         median.authorizeNode(address(1234567890));
 
-        // call by owner should not revert
-        vm.prank(owner);
+        vm.startPrank(owner);
+
+        // if called by owner but the most significant byte is not unique from current nodes, it should revert
+        vm.expectRevert(NodeSlotTaken.selector);
+        median.authorizeNode(address(uint160(node1) + 1)); // here it is assumed that adding 1 does not change the most significant byte
+
+        // if called by owner but address(0) it should revert
+        vm.expectRevert(AddressZero.selector);
+        median.authorizeNode(address(0));
+
+        // if called by owner but already authorized, should revert
+        vm.expectRevert(AlreadyAuthorized.selector);
+        median.authorizeNode(node1);
+
+        // should not revert otherwise
         median.authorizeNode(address(1234567890));
 
         // assertions
@@ -168,7 +257,7 @@ contract MedianTest is Test {
     function test_deauthorize_node() external {
         assertEq(median.authorizedNodesCount(), 2);
 
-        // authorize relayer
+        // authorize node
         vm.prank(owner);
         median.authorizeNode(address(1234567890));
 
@@ -176,8 +265,13 @@ contract MedianTest is Test {
         vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, (address(this))));
         median.deauthorizeNode(address(1234567890));
 
-        // call by owner should not revert
-        vm.prank(owner);
+        vm.startPrank(owner);
+
+        // if called by owner but not authorized, should revert
+        vm.expectRevert(AlreadyDeauthorized.selector);
+        median.deauthorizeNode(address(456789));
+
+        // should not revert otherwise
         median.deauthorizeNode(address(1234567890));
 
         // assertions
@@ -192,8 +286,13 @@ contract MedianTest is Test {
         vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, (address(this))));
         median.updateMinimumQuorum(2);
 
+        vm.startPrank(owner);
+
+        // if called by owner but with 0, it should revert
+        vm.expectRevert(InvalidQuorum.selector);
+        median.updateMinimumQuorum(0);
+
         // call by owner should not revert
-        vm.prank(owner);
         median.updateMinimumQuorum(2);
 
         // assertions

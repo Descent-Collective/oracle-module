@@ -19,6 +19,8 @@ interface IMedian {
     error AlreadySigned();
     error AddressZero();
     error NodeSlotTaken();
+    error AlreadyAuthorized();
+    error AlreadyDeauthorized();
 
     // -- EVENTS --
     // Emitted when a node is authorized
