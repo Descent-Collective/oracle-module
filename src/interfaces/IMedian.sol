@@ -4,25 +4,30 @@ pragma solidity 0.8.21;
 interface IMedian {
     // -- CUSTOM TYPES --
     struct PriceData {
-        uint128 timestamp;
-        uint128 price;
+        uint256 timestamp;
+        uint256 price;
     }
 
     // -- ERRORS --
     error NotEnoughPrices();
-    error OnlyAuthorizedRelayers();
     error InvalidArrayLength();
-    error InvalidSignature();
+    error UnauthorizedNode();
     error InvalidTimestamp();
     error PricesNotOrdered();
     error InvalidQuorum();
+    error InvalidSignature();
+    error AlreadySigned();
+    error AddressZero();
+    error NodeSlotTaken();
+    error AlreadyAuthorized();
+    error AlreadyDeauthorized();
 
     // -- EVENTS --
-    // Emitted when a new signer is authorized
-    event AuthorizedRelayer(address indexed signerAddress);
+    // Emitted when a node is authorized
+    event AuthorizedNode(address indexed addr);
 
-    // Emitted when a signer is deauthorized
-    event DeauthorizedRelayer(address indexed signerAddress);
+    // Emitted when a node is deauthorized
+    event DeauthorizedNode(address indexed addr);
 
     // Emitted when the price is updated
     event PriceUpdated(uint256 indexed timestamp, uint256 indexed price);
@@ -31,33 +36,34 @@ interface IMedian {
     event MinimumQuorumUpdated(uint256 indexed minimumQuorum);
 
     // -- INTERFACE FUNCTIONS --
-    // Authorizes a signer to submit prices
-    function authorizeRelayer(address signerAddress) external;
+    // Authorizes an address to sign prices
+    function authorizeNode(address addr) external;
 
-    // Deauthorizes a signer to submit prices
-    function deauthorizeRelayer(address signerAddress) external;
+    // Deauthorizes an address to sign prices
+    function deauthorizeNode(address addr) external;
 
     // Updates the minimum quorum
-    function updateMinimumQuorum(uint32 minimumQuorum) external;
+    function updateMinimumQuorum(uint256 minimumQuorum) external;
 
     // Updates the price
-    function update(uint256[] calldata _prices, uint64[] calldata _timestamps, bytes[] calldata _signatures) external;
+    function update(uint256[] calldata _prices, uint256[] calldata _timestamps, bytes[] calldata _signatures)
+        external;
 
     // Reads the price and the timestamp
     function read() external view returns (uint256, uint256);
 
     // Reads historical price data
-    function priceHistory(uint256 index) external view returns (uint128, uint128);
+    function priceHistory(uint256 index) external view returns (uint256, uint256);
 
     // Reads the currency pair bytes32 value
     function currencyPair() external view returns (bytes32);
 
     // Reads the current minimum quorum
-    function minimumQuorum() external view returns (uint32);
+    function minimumQuorum() external view returns (uint256);
 
-    // Reads the current number of authorized relayers
-    function authorizedRelayersCount() external view returns (uint32);
+    // Reads the current number of authorized nodes
+    function authorizedNodesCount() external view returns (uint256);
 
-    // Returns true if addr is a valid relayer
-    function authorizedRelayers(address addr) external view returns (bool);
+    // Returns true if addr is a valid node
+    function authorizedNodes(address addr) external view returns (bool);
 }

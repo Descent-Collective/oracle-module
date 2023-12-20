@@ -2,41 +2,25 @@
 pragma solidity 0.8.21;
 
 //  ==========  External imports    ==========
-import {Initializable} from "@openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin-contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {UUPSUpgradeable} from "lib/openzeppelin-contracts/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {ECDSA} from "@openzeppelin-contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin-contracts/utils/cryptography/MessageHashUtils.sol";
-
+import {Ownable} from "@openzeppelin-contracts/access/Ownable.sol";
 import {IMedian} from "./interfaces/IMedian.sol";
 
-contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
-    using MessageHashUtils for bytes;
-    using ECDSA for bytes32;
+contract Median is IMedian, Ownable {
+    bytes32 public immutable currencyPair;
 
-    bytes32 public constant currencyPair = 0x555344432f784e474e0000000000000000000000000000000000000000000000; // hex("USDC/xNGN);
+    uint256 public minimumQuorum;
+    uint256 private lastTimestamp;
+    uint256 private lastPrice;
 
-    uint32 public minimumQuorum;
-    uint64 internal lastTimestamp;
-    uint128 internal lastPrice;
-
-    mapping(address => bool) public authorizedRelayers;
-    uint32 public authorizedRelayersCount;
+    uint256 public authorizedNodesCount;
+    mapping(address => bool) public authorizedNodes;
+    mapping(uint8 => address) public slot;
 
     PriceData[] public priceHistory;
 
-    function initialize(uint32 _minimumQuorum) public initializer {
-        __Ownable_init_unchained(msg.sender);
-
+    constructor(uint256 _minimumQuorum, address currency, address collateral) Ownable(msg.sender) {
+        currencyPair = keccak256(abi.encode(currency, collateral));
         minimumQuorum = _minimumQuorum;
-    }
-
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
-
-    modifier onlyAuthorizedRelayer() {
-        if (!authorizedRelayers[msg.sender]) revert OnlyAuthorizedRelayers();
-
-        _;
     }
 
     modifier hasMinimumQuorum(uint256 pricesLength) {
@@ -44,25 +28,35 @@ contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _;
     }
 
-    function authorizeRelayer(address _relayerAddress) external onlyOwner {
-        if (!authorizedRelayers[_relayerAddress]) {
-            authorizedRelayers[_relayerAddress] = true;
-            authorizedRelayersCount++;
+    function authorizeNode(address _nodeAddress) external onlyOwner {
+        if (_nodeAddress == address(0)) revert AddressZero();
+        if (authorizedNodes[_nodeAddress]) revert AlreadyAuthorized();
+        uint8 mostSignificantByte = uint8(_addressToUint256(_nodeAddress) >> 152);
+        if (slot[mostSignificantByte] != address(0)) revert NodeSlotTaken();
+
+        authorizedNodes[_nodeAddress] = true;
+        slot[mostSignificantByte] = _nodeAddress;
+        unchecked {
+            ++authorizedNodesCount;
         }
 
-        emit AuthorizedRelayer(_relayerAddress);
+        emit AuthorizedNode(_nodeAddress);
     }
 
-    function deauthorizeRelayer(address _relayerAddress) external onlyOwner {
-        if (authorizedRelayers[_relayerAddress]) {
-            authorizedRelayers[_relayerAddress] = false;
-            authorizedRelayersCount--;
+    function deauthorizeNode(address _nodeAddress) external onlyOwner {
+        if (!authorizedNodes[_nodeAddress]) revert AlreadyDeauthorized();
+
+        authorizedNodes[_nodeAddress] = false;
+        uint8 mostSignificantByte = uint8(_addressToUint256(_nodeAddress) >> 152);
+        slot[mostSignificantByte] = address(0);
+        unchecked {
+            --authorizedNodesCount;
         }
 
-        emit DeauthorizedRelayer(_relayerAddress);
+        emit DeauthorizedNode(_nodeAddress);
     }
 
-    function updateMinimumQuorum(uint32 _minimumQuorum) external onlyOwner {
+    function updateMinimumQuorum(uint256 _minimumQuorum) external onlyOwner {
         if (_minimumQuorum == 0) revert InvalidQuorum();
         minimumQuorum = _minimumQuorum;
 
@@ -73,57 +67,88 @@ contract Median is IMedian, Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return (lastTimestamp, lastPrice);
     }
 
-    function update(uint256[] calldata _prices, uint64[] calldata _timestamps, bytes[] calldata _signatures)
+    function update(uint256[] calldata _prices, uint256[] calldata _timestamps, bytes[] calldata _signatures)
         external
-        onlyAuthorizedRelayer
         hasMinimumQuorum(_prices.length)
     {
-        if (_prices.length != _timestamps.length || _prices.length != _signatures.length) revert InvalidArrayLength();
+        if (_prices.length != _timestamps.length || _prices.length != _signatures.length) {
+            revert InvalidArrayLength();
+        }
 
         // cache timestamp on the stack to save gas
         uint256 _lastTimestamp = lastTimestamp;
         uint256 _trackedPrice;
+        uint256 bloom;
 
         for (uint256 i; i < _prices.length; ++i) {
             if (_timestamps[i] <= _lastTimestamp) revert InvalidTimestamp();
             if (_prices[i] < _trackedPrice) revert PricesNotOrdered();
 
-            address signer = recover(_prices[i], _timestamps[i], currencyPair, _signatures[i]);
+            address _signer = _recover(_prices[i], _timestamps[i], _signatures[i]);
 
             // ecdsa lib already reverts with error `ECDSAInvalidSignature()` if signer == address(0)
-            if (signer != msg.sender) revert InvalidSignature();
+            if (!authorizedNodes[_signer]) revert UnauthorizedNode();
 
             _trackedPrice = _prices[i];
+
+            // Bloom filter for signer uniqueness
+            uint8 mostSignificantByte = uint8(_addressToUint256(_signer) >> 152);
+            if ((bloom >> mostSignificantByte) % 2 != 0) revert AlreadySigned();
+            bloom += (2 ** mostSignificantByte);
         }
 
-        // already confirmed to be sorted in the loop above.
-        lastPrice = uint128(median(_prices));
-        lastTimestamp = uint64(block.timestamp);
+        // cache values
+        uint256 _currentTimestamp = block.timestamp;
+        uint256 _lastPrice = _median(_prices);
 
-        priceHistory.push(PriceData({timestamp: lastTimestamp, price: lastPrice}));
+        // Update storage
+        lastPrice = _lastPrice;
+        lastTimestamp = _currentTimestamp;
+        priceHistory.push(PriceData({timestamp: _currentTimestamp, price: _lastPrice}));
 
+        // emit event
         emit PriceUpdated(lastTimestamp, lastPrice);
     }
 
-    function recover(uint256 _price, uint64 _timestamp, bytes32 _pair, bytes calldata _signature)
+    function _recover(uint256 _price, uint256 _timestamp, bytes calldata _signature)
         internal
-        pure
-        returns (address)
+        view
+        returns (address recoveredAddress)
     {
-        bytes32 messageHash = abi.encode(_price, _timestamp, _pair).toEthSignedMessageHash();
-        return messageHash.recover(_signature);
+        bytes32 messageHash = keccak256(abi.encodePacked(_price, _timestamp, currencyPair));
+
+        bytes32 digest;
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+
+        assembly ("memory-safe") {
+            r := calldataload(_signature.offset)
+            s := calldataload(add(_signature.offset, 0x20))
+            v := shr(248, calldataload(add(_signature.offset, 0x40)))
+
+            mstore(0x00, "\x19Ethereum Signed Message:\n32") // 32 is the bytes-length of messageHash
+            mstore(0x1c, messageHash) // 0x1c (28) is the length of the prefix
+            digest := keccak256(0x00, 0x3c) // 0x3c is the length of the prefix (0x1c) + messageHash (0x20)
+        }
+
+        recoveredAddress = ecrecover(digest, v, r, s);
+        if (recoveredAddress == address(0)) revert InvalidSignature();
     }
 
     // Function to calculate the median of an array of values
-    function median(uint256[] memory values) internal pure returns (uint256) {
-        if (values.length == 0) revert InvalidArrayLength();
-
+    function _median(uint256[] memory values) internal pure returns (uint256) {
         if (values.length % 2 == 0) {
-            uint256 middle1 = values[(values.length / 2) - 1];
-            uint256 middle2 = values[values.length / 2];
-            return (middle1 + middle2) / 2;
+            uint256 m = values.length >> 1;
+            uint256 middle1 = values[m - 1];
+            uint256 middle2 = values[m];
+            return (middle1 + middle2) >> 1;
         } else {
-            return values[values.length / 2];
+            return values[values.length >> 1];
         }
+    }
+
+    function _addressToUint256(address _addr) private pure returns (uint256) {
+        return uint256(uint160(_addr));
     }
 }
