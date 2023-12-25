@@ -84,7 +84,7 @@ contract MedianTest is Test {
 
         median.update(_prices, _timestamps, _signatures);
 
-        (uint256 lastTimestamp, uint256 lastPrice) = median.read();
+        (uint256 lastTimestamp, uint256 lastPrice) = (median.lastTimestamp(), median.lastPrice());
         assertEq(lastTimestamp, block.timestamp);
         assertEq(lastPrice, 1e6);
     }

@@ -21,6 +21,7 @@ interface IMedian {
     error NodeSlotTaken();
     error AlreadyAuthorized();
     error AlreadyDeauthorized();
+    error InvalidPrice();
 
     // -- EVENTS --
     // Emitted when a node is authorized
@@ -49,11 +50,14 @@ interface IMedian {
     function update(uint256[] calldata _prices, uint256[] calldata _timestamps, bytes[] calldata _signatures)
         external;
 
-    // Reads the price and the timestamp
-    function read() external view returns (uint256, uint256);
-
     // Reads the currency pair bytes32 value
     function currencyPair() external view returns (bytes32);
+
+    // Reads the currency pair bytes32 value
+    function lastPrice() external view returns (uint256);
+
+    // Reads the currency pair bytes32 value
+    function lastTimestamp() external view returns (uint256);
 
     // Reads the current minimum quorum
     function minimumQuorum() external view returns (uint256);
