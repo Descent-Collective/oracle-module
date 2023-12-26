@@ -9,8 +9,8 @@ contract Median is IMedian, Ownable {
     bytes32 public immutable currencyPair;
 
     uint256 public minimumQuorum;
-    uint256 private lastTimestamp;
-    uint256 private lastPrice;
+    uint256 public lastTimestamp;
+    uint256 public lastPrice;
 
     uint256 public authorizedNodesCount;
     mapping(address => bool) public authorizedNodes;
@@ -61,10 +61,6 @@ contract Median is IMedian, Ownable {
         emit MinimumQuorumUpdated(_minimumQuorum);
     }
 
-    function read() external view returns (uint256, uint256) {
-        return (lastTimestamp, lastPrice);
-    }
-
     function update(uint256[] calldata _prices, uint256[] calldata _timestamps, bytes[] calldata _signatures)
         external
         hasMinimumQuorum(_prices.length)
@@ -80,6 +76,7 @@ contract Median is IMedian, Ownable {
 
         for (uint256 i; i < _prices.length; ++i) {
             if (_timestamps[i] <= _lastTimestamp) revert InvalidTimestamp();
+            if (_prices[i] == 0) revert InvalidPrice();
             if (_prices[i] < _trackedPrice) revert PricesNotOrdered();
 
             address _signer = _recover(_prices[i], _timestamps[i], _signatures[i]);

@@ -3,6 +3,7 @@ pragma solidity 0.8.21;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {Median} from "../src/median.sol";
+import {OSM} from "../src/osm.sol";
 
 contract MedianScript is Script {
     function setUp() public {}
@@ -11,13 +12,17 @@ contract MedianScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
 
-        console2.logString("Deploying median implementation");
+        console2.logString("Deploying Median");
         Median median = new Median(1, address(1234), address(5678));
         string memory logMessage = string.concat("Median contract address: ", vm.toString(address(median)));
         console2.logString(logMessage);
-
         // for testing with local relayer client
         median.authorizeNode(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266);
+
+        console2.logString("Deploying OSM");
+        OSM osm = new OSM(median);
+        logMessage = string.concat("OSM contract address: ", vm.toString(address(osm)));
+        console2.logString(logMessage);
 
         vm.stopBroadcast();
     }
