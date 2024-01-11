@@ -278,6 +278,10 @@ contract MedianTest is Test {
     function test_update_minimum_quorum() external {
         assertEq(median.minimumQuorum(), 1);
 
+        // at deployment if _minimuQuorum is 0, revert
+        vm.expectRevert(InvalidQuorum.selector);
+        new Median(0, address(1234), address(5678));
+
         // if called by non owner, should revert
         vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, (address(this))));
         median.updateMinimumQuorum(2);

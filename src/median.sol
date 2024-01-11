@@ -17,6 +17,8 @@ contract Median is IMedian, Ownable {
     mapping(uint8 => address) public slot;
 
     constructor(uint256 _minimumQuorum, address currency, address collateral) Ownable(msg.sender) {
+        if (_minimumQuorum == 0) revert InvalidQuorum();
+
         currencyPair = keccak256(abi.encode(currency, collateral));
         minimumQuorum = _minimumQuorum;
     }
