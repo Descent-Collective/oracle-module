@@ -2,11 +2,11 @@
 pragma solidity 0.8.21;
 
 import {Test} from "forge-std/Test.sol";
-import {MessageHashUtils} from "@openzeppelin-contracts/utils/cryptography/MessageHashUtils.sol";
+import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {Median} from "../src/median.sol";
 
 contract MedianTest is Test {
-    using MessageHashUtils for bytes32;
+    using SignatureCheckerLib for bytes32;
 
     Median median;
 
@@ -22,7 +22,7 @@ contract MedianTest is Test {
     error InvalidArrayLength();
     error UnauthorizedNode();
     error InvalidTimestamp();
-    error OwnableUnauthorizedAccount(address account);
+    error Unauthorized();
     error InvalidSignature();
     error AlreadySigned();
     error PricesNotOrdered();
@@ -225,7 +225,7 @@ contract MedianTest is Test {
         assertEq(median.authorizedNodesCount(), 2);
 
         // if called by non owner, should revert
-        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, (address(this))));
+        vm.expectRevert(Unauthorized.selector);
         median.authorizeNode(address(1234567890));
 
         vm.startPrank(owner);
@@ -258,7 +258,7 @@ contract MedianTest is Test {
         median.authorizeNode(address(1234567890));
 
         // if called by non owner, should revert
-        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, (address(this))));
+        vm.expectRevert(Unauthorized.selector);
         median.deauthorizeNode(address(1234567890));
 
         vm.startPrank(owner);
@@ -283,7 +283,7 @@ contract MedianTest is Test {
         new Median(0, address(1234), address(5678));
 
         // if called by non owner, should revert
-        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, (address(this))));
+        vm.expectRevert(Unauthorized.selector);
         median.updateMinimumQuorum(2);
 
         vm.startPrank(owner);
