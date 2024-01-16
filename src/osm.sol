@@ -2,17 +2,16 @@
 pragma solidity 0.8.21;
 
 //  ==========  External imports    ==========
-import {Ownable} from "@openzeppelin-contracts/access/Ownable.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 import {IMedian} from "./interfaces/IMedian.sol";
 
 contract OSM is Ownable {
-    IMedian public median;
-    uint256 oneHour = 1 hours;
-    uint256 public lastUpdateHourStart;
+    uint256 constant oneHour = 1 hours;
 
+    IMedian public median;
+    uint256 public lastUpdateHourStart;
     uint256 public current;
     uint256 public next;
-
     bool public stopped;
 
     error DelayNotElapsed();
@@ -20,7 +19,8 @@ contract OSM is Ownable {
 
     event FeedUpdated(uint256 value);
 
-    constructor(IMedian _median) Ownable(msg.sender) {
+    constructor(IMedian _median) {
+        _initializeOwner(msg.sender);
         median = _median;
     }
 

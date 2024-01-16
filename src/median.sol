@@ -2,7 +2,7 @@
 pragma solidity 0.8.21;
 
 //  ==========  External imports    ==========
-import {Ownable} from "@openzeppelin-contracts/access/Ownable.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 import {IMedian} from "./interfaces/IMedian.sol";
 
 contract Median is IMedian, Ownable {
@@ -16,7 +16,9 @@ contract Median is IMedian, Ownable {
     mapping(address => bool) public authorizedNodes;
     mapping(uint8 => address) public slot;
 
-    constructor(uint256 _minimumQuorum, address currency, address collateral) Ownable(msg.sender) {
+    constructor(uint256 _minimumQuorum, address currency, address collateral) {
+        _initializeOwner(msg.sender);
+
         if (_minimumQuorum == 0) revert InvalidQuorum();
 
         currencyPair = keccak256(abi.encode(currency, collateral));
